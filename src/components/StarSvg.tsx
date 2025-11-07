@@ -6,6 +6,7 @@ import type { BeltConfig } from "@/components/AsteroidBeltsControls";
 
 export type StarSvgProps = {
     seed: number;
+    stars?: Array<{ type: "yellow" | "red-dwarf" | "blue-giant" | "neutron" | "black-hole" }>;
     planets: Planet[];
     stations?: Station[];
     showMoons: boolean;
@@ -30,6 +31,7 @@ export type StarSvgHandle = {
 
 const StarSvg = forwardRef<StarSvgHandle, StarSvgProps>(function StarSvg({
     seed,
+    stars = [{ type: "yellow" }],
     planets,
     stations = [],
     showMoons,
@@ -155,13 +157,13 @@ const StarSvg = forwardRef<StarSvgHandle, StarSvgProps>(function StarSvg({
     // Build SVG strings: full markup for export, and inner markup for JSX render
     const { full: svgElementMarkup, inner: svgInnerMarkup } = useMemo(() => {
         const starRand = mulberry32(seed ^ 0xabcdef);
-        const stars: string[] = [];
+        const bgStars: string[] = [];
         for (let i = 0; i < 300; i++) {
             const sx = starRand() * width;
             const sy = starRand() * height;
             const ss = starRand() * 1.5;
             const alpha = 0.3 + starRand() * 0.7;
-            stars.push(`<rect x="${sx.toFixed(2)}" y="${sy.toFixed(2)}" width="${ss.toFixed(2)}" height="${ss.toFixed(2)}" fill="white" fill-opacity="${alpha.toFixed(2)}" />`);
+            bgStars.push(`<rect x="${sx.toFixed(2)}" y="${sy.toFixed(2)}" width="${ss.toFixed(2)}" height="${ss.toFixed(2)}" fill="white" fill-opacity="${alpha.toFixed(2)}" />`);
         }
 
         // Orbits
@@ -243,7 +245,39 @@ const StarSvg = forwardRef<StarSvgHandle, StarSvgProps>(function StarSvg({
         // Star glow using radial gradient
         const defs = `<defs><radialGradient id=\"starGlow\" cx=\"50%\" cy=\"50%\" r=\"50%\"><stop offset=\"0%\" stop-color=\"#FFEBAA\" stop-opacity=\"0.95\"/><stop offset=\"30%\" stop-color=\"#FFC850\" stop-opacity=\"0.5\"/><stop offset=\"100%\" stop-color=\"#FFC850\" stop-opacity=\"0\"/></radialGradient></defs>`;
 
-        const inner = `${defs}\n<rect width=\"100%\" height=\"100%\" fill=\"#0b1020\"/>\n${stars.join("\n")}\n<circle cx=\"${cx}\" cy=\"${cy}\" r=\"120\" fill=\"url(#starGlow)\"/>\n<circle cx=\"${cx}\" cy=\"${cy}\" r=\"16\" fill=\"#FFE082\"/>\n${orbits}\n${planetElems.join("\n")}\n${beltsMarkup}\n${stationElems.join("\n")}\n${labelsMarkup}`;
+        // Multi-star positions
+        const count = Math.min(3, Math.max(1, (stars?.length ?? 1)));
+        const baseAngle = mulberry32(seed ^ 0x5151)() * Math.PI * 2;
+        const rStar = 60;
+        const starPositions: Array<{ x: number; y: number }> = [];
+        if (count === 1) starPositions.push({ x: cx, y: cy });
+        else if (count === 2) {
+            starPositions.push({ x: cx + Math.cos(baseAngle) * rStar, y: cy + Math.sin(baseAngle) * rStar });
+            starPositions.push({ x: cx - Math.cos(baseAngle) * rStar, y: cy - Math.sin(baseAngle) * rStar });
+        } else {
+            for (let i = 0; i < 3; i++) {
+                const ang = baseAngle + (i * (Math.PI * 2)) / 3;
+                starPositions.push({ x: cx + Math.cos(ang) * rStar, y: cy + Math.sin(ang) * rStar });
+            }
+        }
+        const starElems = starPositions.map((pos, i) => {
+            const t = stars?.[i]?.type ?? "yellow";
+            switch (t) {
+                case "red-dwarf":
+                    return `<g><radialGradient id="rg${i}" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFB478" stop-opacity="0.95"/><stop offset="40%" stop-color="#FF643C" stop-opacity="0.5"/><stop offset="100%" stop-color="#FF643C" stop-opacity="0"/></radialGradient><circle cx="${pos.x}" cy="${pos.y}" r="90" fill="url(#rg${i})"/><circle cx="${pos.x}" cy="${pos.y}" r="12" fill="#FF9966"/></g>`;
+                case "blue-giant":
+                    return `<g><radialGradient id="bg${i}" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#C8E6FF" stop-opacity="0.95"/><stop offset="30%" stop-color="#78BEFF" stop-opacity="0.5"/><stop offset="100%" stop-color="#78BEFF" stop-opacity="0"/></radialGradient><circle cx="${pos.x}" cy="${pos.y}" r="160" fill="url(#bg${i})"/><circle cx="${pos.x}" cy="${pos.y}" r="20" fill="#80BFFF"/></g>`;
+                case "neutron":
+                    return `<g><radialGradient id="nt${i}" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#EAF5FF" stop-opacity="1"/><stop offset="40%" stop-color="#B4DCFF" stop-opacity="0.5"/><stop offset="100%" stop-color="#B4DCFF" stop-opacity="0"/></radialGradient><circle cx="${pos.x}" cy="${pos.y}" r="70" fill="url(#nt${i})"/><circle cx="${pos.x}" cy="${pos.y}" r="6" fill="#EAF5FF"/><circle cx="${pos.x}" cy="${pos.y}" r="12" fill="none" stroke="rgba(220,240,255,0.9)" stroke-width="1"/></g>`;
+                case "black-hole":
+                    return `<g><circle cx="${pos.x}" cy="${pos.y}" r="28" fill="none" stroke="rgba(255,180,80,0.6)" stroke-width="12"/><circle cx="${pos.x}" cy="${pos.y}" r="36" fill="none" stroke="rgba(180,120,255,0.4)" stroke-width="6"/><circle cx="${pos.x}" cy="${pos.y}" r="14" fill="#000000"/></g>`;
+                case "yellow":
+                default:
+                    return `<g><radialGradient id="yl${i}" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#FFEBAA" stop-opacity="0.95"/><stop offset="30%" stop-color="#FFC850" stop-opacity="0.5"/><stop offset="100%" stop-color="#FFC850" stop-opacity="0"/></radialGradient><circle cx="${pos.x}" cy="${pos.y}" r="120" fill="url(#yl${i})"/><circle cx="${pos.x}" cy="${pos.y}" r="16" fill="#FFE082"/></g>`;
+            }
+        }).join("\n");
+
+        const inner = `${defs}\n<rect width=\"100%\" height=\"100%\" fill=\"#0b1020\"/>\n${bgStars.join("\n")}\n${starElems}\n${orbits}\n${planetElems.join("\n")}\n${beltsMarkup}\n${stationElems.join("\n")}\n${labelsMarkup}`;
 
         const full = `\n<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\" shape-rendering=\"geometricPrecision\" text-rendering=\"optimizeLegibility\">\n${inner}\n</svg>`;
 

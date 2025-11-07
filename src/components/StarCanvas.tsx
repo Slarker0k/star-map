@@ -40,6 +40,7 @@ export type Station = {
 
 export type StarCanvasProps = {
     seed: number;
+    stars?: Array<{ type: "yellow" | "red-dwarf" | "blue-giant" | "neutron" | "black-hole" }>;
     planets: Planet[];
     stations?: Station[];
     // moons
@@ -73,6 +74,7 @@ type LabelPlacement = { x: number; y: number; text: string };
 
 const StarCanvas = React.forwardRef<StarCanvasHandle, StarCanvasProps>(function StarCanvas({
     seed,
+    stars = [{ type: "yellow" }],
     planets,
     stations = [],
     showMoons,
@@ -116,19 +118,90 @@ const StarCanvas = React.forwardRef<StarCanvasHandle, StarCanvasProps>(function 
         }
         ctx.globalAlpha = 1;
 
-        // Star glow & core
-        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120);
-        gradient.addColorStop(0, "rgba(255, 235, 170, 0.95)");
-        gradient.addColorStop(0.3, "rgba(255, 200, 80, 0.5)");
-        gradient.addColorStop(1, "rgba(255, 200, 80, 0)");
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 120, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#FFE082";
-        ctx.beginPath();
-        ctx.arc(cx, cy, 16, 0, Math.PI * 2);
-        ctx.fill();
+        // Compute star positions based on count and seed
+        const count = Math.min(3, Math.max(1, stars.length));
+        const baseAngle = mulberry32(seed ^ 0x5151)() * Math.PI * 2;
+        const radius = 60; // distance from barycenter
+        const positions: Array<{ x: number; y: number }> = [];
+        if (count === 1) {
+            positions.push({ x: cx, y: cy });
+        } else if (count === 2) {
+            positions.push({ x: cx + Math.cos(baseAngle) * radius, y: cy + Math.sin(baseAngle) * radius });
+            positions.push({ x: cx - Math.cos(baseAngle) * radius, y: cy - Math.sin(baseAngle) * radius });
+        } else {
+            for (let i = 0; i < 3; i++) {
+                const ang = baseAngle + (i * (Math.PI * 2)) / 3;
+                positions.push({ x: cx + Math.cos(ang) * radius, y: cy + Math.sin(ang) * radius });
+            }
+        }
+
+        // Render stars by type
+        const drawStar = (type: string, x: number, y: number) => {
+            switch (type) {
+                case "red-dwarf": {
+                    const grad = ctx.createRadialGradient(x, y, 0, x, y, 90);
+                    grad.addColorStop(0, "rgba(255, 180, 120, 0.95)");
+                    grad.addColorStop(0.4, "rgba(255, 100, 60, 0.5)");
+                    grad.addColorStop(1, "rgba(255, 80, 40, 0)");
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(x, y, 90, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = "#FF9966";
+                    ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill();
+                    break;
+                }
+                case "blue-giant": {
+                    const grad = ctx.createRadialGradient(x, y, 0, x, y, 160);
+                    grad.addColorStop(0, "rgba(200, 230, 255, 0.95)");
+                    grad.addColorStop(0.3, "rgba(120, 190, 255, 0.5)");
+                    grad.addColorStop(1, "rgba(120, 190, 255, 0)");
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(x, y, 160, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = "#80BFFF";
+                    ctx.beginPath(); ctx.arc(x, y, 20, 0, Math.PI * 2); ctx.fill();
+                    break;
+                }
+                case "neutron": {
+                    const grad = ctx.createRadialGradient(x, y, 0, x, y, 70);
+                    grad.addColorStop(0, "rgba(230, 245, 255, 1)");
+                    grad.addColorStop(0.4, "rgba(180, 220, 255, 0.5)");
+                    grad.addColorStop(1, "rgba(180, 220, 255, 0)");
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(x, y, 70, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = "#EAF5FF";
+                    ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+                    // halo ring
+                    ctx.strokeStyle = "rgba(220, 240, 255, 0.9)"; ctx.lineWidth = 1;
+                    ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.stroke();
+                    break;
+                }
+                case "black-hole": {
+                    // accretion disk
+                    ctx.strokeStyle = "rgba(255, 180, 80, 0.6)";
+                    ctx.lineWidth = 12;
+                    ctx.beginPath(); ctx.arc(x, y, 28, 0, Math.PI * 2); ctx.stroke();
+                    ctx.strokeStyle = "rgba(180, 120, 255, 0.4)";
+                    ctx.lineWidth = 6;
+                    ctx.beginPath(); ctx.arc(x, y, 36, 0, Math.PI * 2); ctx.stroke();
+                    // event horizon
+                    ctx.fillStyle = "#000000";
+                    ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI * 2); ctx.fill();
+                    break;
+                }
+                case "yellow":
+                default: {
+                    const grad = ctx.createRadialGradient(x, y, 0, x, y, 120);
+                    grad.addColorStop(0, "rgba(255, 235, 170, 0.95)");
+                    grad.addColorStop(0.3, "rgba(255, 200, 80, 0.5)");
+                    grad.addColorStop(1, "rgba(255, 200, 80, 0)");
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(x, y, 120, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = "#FFE082";
+                    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fill();
+                    break;
+                }
+            }
+        };
+        positions.forEach((pos, i) => drawStar(stars[i]?.type ?? "yellow", pos.x, pos.y));
 
         // Belts (per config)
         for (let bi = 0; bi < belts.length; bi++) {
@@ -445,7 +518,7 @@ const StarCanvas = React.forwardRef<StarCanvasHandle, StarCanvasProps>(function 
         ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto";
         ctx.textAlign = "left";
         ctx.fillText(`Planets: ${planets.length}  |  Seed: ${seed}`, 12, h - 12);
-    }, [belts, globalMoons, labelColor, labelPosition, labelSize, moonMaxSize, moonMinSize, moonOrbitMax, moonOrbitMin, planets, seed, showMoons, stations]);
+    }, [belts, globalMoons, labelColor, labelPosition, labelSize, moonMaxSize, moonMinSize, moonOrbitMax, moonOrbitMin, planets, seed, showMoons, stations, stars]);
 
     const draw = useCallback(() => {
         const canvas = canvasRef.current;
@@ -464,7 +537,7 @@ const StarCanvas = React.forwardRef<StarCanvasHandle, StarCanvasProps>(function 
         ctx.resetTransform();
         ctx.scale(dpr, dpr);
         renderScene(ctx, width, h);
-    }, [seed, planets, stations, showMoons, globalMoons, moonMinSize, moonMaxSize, moonOrbitMin, moonOrbitMax, labelSize, labelColor, showLabelBackground, belts, labelPosition]);
+    }, [seed, planets, stations, showMoons, globalMoons, moonMinSize, moonMaxSize, moonOrbitMin, moonOrbitMax, labelSize, labelColor, showLabelBackground, belts, labelPosition, stars]);
 
     useEffect(() => {
         const ro = new ResizeObserver(() => draw());

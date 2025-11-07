@@ -46,9 +46,16 @@ export default function StarSystemEditor() {
     // display order mapping: index -> source base index
     // Removed planet drag-reorder feature; keep original generation order only.
 
+    // Multi-star system settings (up to 3)
+    const STAR_TYPES = ["yellow", "red-dwarf", "blue-giant", "neutron", "black-hole"] as const;
+    type StarType = typeof STAR_TYPES[number];
+    const [stars, setStars] = useState<Array<{ type: StarType }>>([{ type: "yellow" }]);
+
     // Derived: planets based on seed and count (stable prefix when count changes)
     const basePlanets: CanvasPlanet[] = useMemo(() => {
         const rand = mulberry32(seed);
+        // Use a separate RNG for orbit spacing to avoid affecting other attributes
+        const orbitRand = mulberry32(mixSeed(seed, 0x0b1d5));
         const list: CanvasPlanet[] = [];
         // Orbit spacing params
         const minOrbit = 40; // px from star
@@ -56,8 +63,13 @@ export default function StarSystemEditor() {
         const orbitGapMax = 70;
         let currentOrbit = minOrbit;
         for (let i = 0; i < numPlanets; i++) {
-            const gap = orbitGapMin + rand() * (orbitGapMax - orbitGapMin);
-            currentOrbit += gap;
+            const gap1 = orbitGapMin + orbitRand() * (orbitGapMax - orbitGapMin);
+            currentOrbit += gap1;
+            // Shift: first planet takes the position where the second would be (apply another gap on i=0)
+            if (i === 0 && numPlanets > 0) {
+                const gap2 = orbitGapMin + orbitRand() * (orbitGapMax - orbitGapMin);
+                currentOrbit += gap2;
+            }
             const size = 4 + Math.floor(rand() * 10); // 4..14 px radius
             const angle = rand() * Math.PI * 2;
             // Color palette: muted planetary hues
@@ -236,6 +248,7 @@ export default function StarSystemEditor() {
                 showLabelBackground,
                 belts,
                 stations: stations.map(s => ({ id: s.id, name: s.name, radius: s.radius, angle: s.angle, iconType: s.iconType, color: s.color, size: s.size, customIconDataUrl: s.customIconDataUrl, showLabel: s.showLabel !== false })),
+                stars,
             },
             planets: [] as Array<{
                 orbitRadius: number;
@@ -342,6 +355,7 @@ export default function StarSystemEditor() {
                     if (typeof st.showLabelBackground === "boolean") setShowLabelBackground(st.showLabelBackground);
                     if (Array.isArray(st.belts)) setBelts(st.belts);
                     if (Array.isArray(st.stations)) setStations(st.stations.map((s: any) => ({ ...s, showLabel: s.showLabel !== false })));
+                    if (Array.isArray(st.stars)) setStars(st.stars.filter((x: any) => STAR_TYPES.includes(x.type)) as Array<{ type: StarType }>);
                 }
             } catch (err) {
                 console.error("Failed to import JSON", err);
@@ -527,6 +541,44 @@ export default function StarSystemEditor() {
                                         </label>
                                     </div>
                                 </SidebarSection>
+                                <SidebarSection title="Stars" defaultOpen={true}>
+                                    <div className="space-y-3 text-xs text-white/80">
+                                        <label className="flex items-center gap-2">
+                                            <span>Count</span>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={3}
+                                                value={stars.length}
+                                                onChange={(e) => {
+                                                    const n = Math.max(1, Math.min(3, Number(e.target.value) || 1));
+                                                    setStars(prev => {
+                                                        const copy = [...prev];
+                                                        if (copy.length < n) {
+                                                            while (copy.length < n) copy.push({ type: "yellow" });
+                                                        } else if (copy.length > n) {
+                                                            copy.length = n;
+                                                        }
+                                                        return copy;
+                                                    });
+                                                }}
+                                                className="w-16 rounded bg-[#1c2536] border border-white/20 px-2 py-1 text-white"
+                                            />
+                                        </label>
+                                        {stars.map((s, i) => (
+                                            <label key={i} className="flex items-center gap-2">
+                                                <span>Star #{i + 1}</span>
+                                                <select
+                                                    value={s.type}
+                                                    onChange={(e) => setStars(prev => prev.map((st, idx) => idx === i ? { type: e.target.value as StarType } : st))}
+                                                    className="rounded bg-[#1c2536] border border-white/20 px-2 py-1 text-white"
+                                                >
+                                                    {STAR_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                                </select>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </SidebarSection>
                                 <SidebarSection title="Planets" defaultOpen={true}>
                                     <PlanetListControls
                                         planets={planets.map((p, i) => ({
@@ -582,6 +634,7 @@ export default function StarSystemEditor() {
                                 <StarCanvas
                                     ref={canvasRef}
                                     seed={seed}
+                                    stars={stars}
                                     planets={planets}
                                     stations={stations}
                                     showMoons={showMoons}
@@ -608,6 +661,7 @@ export default function StarSystemEditor() {
                                 <StarSvg
                                     ref={svgRef}
                                     seed={seed}
+                                    stars={stars}
                                     planets={planets}
                                     stations={stations}
                                     showMoons={showMoons}

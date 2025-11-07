@@ -65,3 +65,5 @@ Screenshots
 | Example 1 | Example 2 | Example 3 |
 |-----------|-----------|-----------|
 | ![Example 1](screenshots/star-system_326616533_6_2560x1440.png) | ![Example 2](screenshots/star-system_326616533_6_1200x900.png) | ![Example 3](screenshots/Screenshot%20.png) |
+
+![Example 4](screenshots/star-system_326616533_6_2560x1440.png)

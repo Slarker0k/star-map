@@ -24,3 +24,28 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Improve contrast for native selects/options (Windows/Edge) */
+select {
+  color-scheme: dark;
+  /* Hint browser to use dark popups */
+}
+
+select option,
+select optgroup {
+  background-color: #0b1020;
+  /* match canvas bg */
+  color: #e5e7eb;
+  /* tailwind zinc-200 */
+}
+
+/* High-contrast mode fallback */
+@media (forced-colors: active) {
+
+  select option,
+  select optgroup {
+    forced-color-adjust: none;
+    background-color: Canvas;
+    color: CanvasText;
+  }
+}

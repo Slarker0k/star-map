@@ -8,42 +8,17 @@ export type PlanetModel = Omit<CanvasPlanet, "name"> & { name?: string };
 export default function PlanetListControls({
     planets,
     onChange,
-    onReorder,
 }: {
     planets: PlanetModel[];
     onChange: (index: number, updates: Partial<PlanetModel>) => void;
-    onReorder?: (fromIndex: number, toIndex: number) => void;
 }) {
-    const onDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
-        e.dataTransfer.setData("text/plain", String(index));
-        e.dataTransfer.effectAllowed = "move";
-    };
-
-    const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-    };
-
-    const onDrop = (e: React.DragEvent<HTMLDivElement>, toIndex: number) => {
-        e.preventDefault();
-        const fromIndex = Number(e.dataTransfer.getData("text/plain"));
-        if (!Number.isNaN(fromIndex) && fromIndex !== toIndex) {
-            onReorder?.(fromIndex, toIndex);
-        }
-    };
-
     return (
-        <div className="rounded-lg border border-white/10 p-3 text-sm bg-black/40 backdrop-blur">
-            <div className="text-white/90 font-medium mb-2">Planets</div>
+        <div className="text-sm">
             <div className="space-y-3">
                 {planets.map((p, i) => (
                     <div
                         key={i}
                         className="space-y-2 rounded bg-white/5 hover:bg-white/10 p-2"
-                        draggable
-                        onDragStart={(e) => onDragStart(e, i)}
-                        onDragOver={onDragOver}
-                        onDrop={(e) => onDrop(e, i)}
                     >
                         <div className="grid grid-cols-1 md:grid-cols-7 items-center gap-2 text-xs text-white/70">
                             <div className="font-medium">#{i + 1}</div>

@@ -23,9 +23,8 @@ export default function AsteroidBeltsControls({
     onChange: (index: number, update: Partial<BeltConfig>) => void;
 }) {
     return (
-        <div className="rounded-lg border border-white/10 p-3 text-sm bg-black/40 backdrop-blur">
+        <div className="text-sm">
             <div className="flex items-center justify-between mb-2">
-                <div className="text-white/90 font-medium">Asteroid belts</div>
                 <button
                     type="button"
                     onClick={onAdd}
@@ -59,7 +58,7 @@ export default function AsteroidBeltsControls({
                                 <select
                                     value={b.type}
                                     onChange={(e) => onChange(i, { type: e.target.value as BeltConfig["type"] })}
-                                    className="rounded bg-white/10 border border-white/10 px-2 py-1 text-white"
+                                    className="rounded bg-[#1c2536] border border-white/20 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-blue-400/40"
                                 >
                                     <option value="free">Free</option>
                                     <option value="anchored">Anchored</option>
@@ -72,7 +71,7 @@ export default function AsteroidBeltsControls({
                                     <select
                                         value={b.gapIndex ?? 0}
                                         onChange={(e) => onChange(i, { gapIndex: Number(e.target.value) })}
-                                        className="rounded bg-white/10 border border-white/10 px-2 py-1 text-white"
+                                        className="rounded bg-[#1c2536] border border-white/20 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-blue-400/40"
                                     >
                                         {Array.from({ length: Math.max(0, planetsCount - 1) }).map((_, gi) => (
                                             <option key={gi} value={gi}>

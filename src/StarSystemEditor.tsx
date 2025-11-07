@@ -2,14 +2,17 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import StarCanvas, { type Planet as CanvasPlanet, type Station as CanvasStation, type StarCanvasHandle } from "@/components/StarCanvas";
+import StarSvg, { type StarSvgHandle } from "@/components/StarSvg";
 import PlanetListControls, { type PlanetModel } from "@/components/PlanetListControls";
 import AsteroidBeltsControls, { type BeltConfig } from "@/components/AsteroidBeltsControls";
 import SpaceStationsControls, { defaultStation } from "@/components/SpaceStationsControls";
+import SidebarSection from "@/components/SidebarSection";
 import { mulberry32, mixSeed } from "@/lib/rng";
 
 export default function StarSystemEditor() {
     const [numPlanets, setNumPlanets] = useState<number>(6);
-    const [seed, setSeed] = useState<number>(() => Math.floor(Math.random() * 1_000_000_000));
+    // Use a deterministic SSR seed; randomize only after client mounts to avoid hydration mismatch
+    const [seed, setSeed] = useState<number>(123456789);
     // Labels
     // Show labels now per-object, keep global style settings only
     // Deprecated smart layout removed
@@ -32,12 +35,16 @@ export default function StarSystemEditor() {
     // Space stations
     const [stations, setStations] = useState<CanvasStation[]>([]);
     const [placingStationIndex, setPlacingStationIndex] = useState<number | null>(null);
+    const [renderMode, setRenderMode] = useState<"canvas" | "svg">("canvas");
+    // SVG dynamic dimensions (for PNG export at current size)
+    const [svgWidth] = useState<number>(1200);
+    const [svgHeight, setSvgHeight] = useState<number>(700);
     // UI
 
     // per-planet overrides (name/size/color/moons) tracked in independent array
     const [planetOverrides, setPlanetOverrides] = useState<PlanetModel[]>([]);
     // display order mapping: index -> source base index
-    const [order, setOrder] = useState<number[]>([]);
+    // Removed planet drag-reorder feature; keep original generation order only.
 
     // Derived: planets based on seed and count (stable prefix when count changes)
     const basePlanets: CanvasPlanet[] = useMemo(() => {
@@ -109,85 +116,109 @@ export default function StarSystemEditor() {
 
     const getPlanetName = useCallback(
         (index: number) => {
-            const baseIdx = order[index] ?? index;
-            return customNames[index] ?? planetOverrides[index]?.name ?? defaultNames[baseIdx] ?? `Planet ${index + 1}`;
+            return customNames[index] ?? planetOverrides[index]?.name ?? defaultNames[index] ?? `Planet ${index + 1}`;
         },
-        [customNames, planetOverrides, defaultNames, order]
+        [customNames, planetOverrides, defaultNames]
     );
 
     // Compose final planets with overrides + names for canvas
     const planets: CanvasPlanet[] = useMemo(() => {
-        const n = basePlanets.length;
-        const orbits = basePlanets.map((b) => ({ orbitRadius: b.orbitRadius, angle: b.angle }));
-        const actualOrder = order.length === n ? order : Array.from({ length: n }, (_, i) => i);
-        const merged: CanvasPlanet[] = actualOrder.map((srcIdx, i) => {
-            const src = basePlanets[srcIdx];
-            const orbit = orbits[i];
-            return {
-                orbitRadius: orbit.orbitRadius,
-                angle: orbit.angle,
-                size: planetOverrides[i]?.size ?? src.size,
-                color: planetOverrides[i]?.color ?? src.color,
-                name: getPlanetName(i),
-                moons: planetOverrides[i]?.moons,
-                rings: planetOverrides[i]?.rings ?? src.rings,
-                showLabel: planetOverrides[i]?.showLabel,
-            } as CanvasPlanet;
+        return basePlanets.map((src, i) => ({
+            orbitRadius: src.orbitRadius,
+            angle: src.angle,
+            size: planetOverrides[i]?.size ?? src.size,
+            color: planetOverrides[i]?.color ?? src.color,
+            name: getPlanetName(i),
+            moons: planetOverrides[i]?.moons,
+            rings: planetOverrides[i]?.rings ?? src.rings,
+            showLabel: planetOverrides[i]?.showLabel,
+        } as CanvasPlanet));
+    }, [basePlanets, planetOverrides, getPlanetName]);
+
+    // Keep overrides length in sync with planets count (in effect, not during render)
+    React.useEffect(() => {
+        setPlanetOverrides((prev) => {
+            if (prev.length === basePlanets.length) return prev;
+            const copy = [...prev];
+            copy.length = basePlanets.length;
+            return copy;
         });
-        // ensure overrides array/order length track planet count
-        if (planetOverrides.length !== merged.length) {
-            setPlanetOverrides((prev) => {
-                const copy = [...prev];
-                copy.length = merged.length;
-                return copy;
-            });
-        }
-        if (order.length !== n) {
-            setOrder((prev) => {
-                const next = Array.from({ length: n }, (_, i) => prev[i] ?? i);
-                return next;
-            });
-        }
-        return merged;
-    }, [basePlanets, planetOverrides, getPlanetName, order]);
+    }, [basePlanets.length]);
 
     // ensure order updates on planet count or seed changes
-    React.useEffect(() => {
-        setOrder((prev) => {
-            const n = basePlanets.length;
-            const next = Array.from({ length: n }, (_, i) => prev[i] ?? i);
-            return next;
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [numPlanets, seed]);
+    // No reorder tracking anymore.
 
     const exportPNG = useCallback(() => {
-        const canvas = document.getElementById("star-canvas") as HTMLCanvasElement | null;
-        if (!canvas) return;
-        const url = canvas.toDataURL("image/png");
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `star-system_${seed}_${numPlanets}.png`;
-        a.click();
-    }, [numPlanets, seed]);
+        if (renderMode === "canvas") {
+            const canvas = document.getElementById("star-canvas") as HTMLCanvasElement | null;
+            if (!canvas) return alert("Canvas element not found.");
+            const url = canvas.toDataURL("image/png");
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `star-system_${seed}_${numPlanets}.png`;
+            a.click();
+        } else {
+            const handle = svgRef.current;
+            if (!handle) return alert("SVG renderer not ready.");
+            (async () => {
+                try {
+                    const url = await handle.exportPNG(svgWidth, svgHeight);
+                    if (!url) return alert("Failed to generate PNG from SVG.");
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `star-system_${seed}_${numPlanets}_${svgWidth}x${svgHeight}.png`;
+                    a.click();
+                } catch (e) {
+                    console.error("SVG PNG export failed", e);
+                    alert("SVG PNG export failed.");
+                }
+            })();
+        }
+    }, [numPlanets, seed, renderMode, svgWidth, svgHeight]);
 
     // upscale export
     const canvasRef = React.useRef<StarCanvasHandle | null>(null);
+    const svgRef = React.useRef<StarSvgHandle | null>(null);
     const [exportSizePreset, setExportSizePreset] = useState<string>("1280x720");
-    const exportUpscaled = useCallback(() => {
-        const handle = canvasRef.current;
+    const [exporting, setExporting] = useState(false);
+    const exportUpscaled = useCallback(async () => {
+        if (exporting) return;
+        const handle = renderMode === "svg" ? svgRef.current : canvasRef.current;
         if (!handle) return;
         const [wStr, hStr] = exportSizePreset.split("x");
         const w = Number(wStr);
         const h = Number(hStr);
         if (!w || !h) return;
-        const url = handle.exportPNG(w, h);
-        if (!url) return;
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `star-system_${seed}_${numPlanets}_${w}x${h}.png`;
-        a.click();
-    }, [exportSizePreset, seed, numPlanets]);
+        try {
+            setExporting(true);
+            const result = (handle as any).exportPNG(w, h);
+            const url = result instanceof Promise ? await result : result;
+            if (!url) return;
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `star-system_${seed}_${numPlanets}_${w}x${h}.png`;
+            a.click();
+        } catch (e) {
+            console.error("Upscaled export failed", e);
+            alert("Failed to export upscaled PNG.");
+        } finally {
+            setExporting(false);
+        }
+    }, [exportSizePreset, seed, numPlanets, renderMode, exporting]);
+
+    // Update svg height on mount and resize for better fit
+    React.useEffect(() => {
+        const update = () => setSvgHeight(Math.min(900, Math.round(window.innerHeight * 0.78)));
+        update();
+        window.addEventListener("resize", update);
+        return () => window.removeEventListener("resize", update);
+    }, []);
+
+    // Randomize seed on client after first mount
+    React.useEffect(() => {
+        setSeed(Math.floor(Math.random() * 1_000_000_000));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const exportJSON = useCallback(() => {
         // Recompute deterministic moons similar to renderer for data export
@@ -371,7 +402,26 @@ export default function StarSystemEditor() {
                             </button>
                         </label>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                                <span className="text-white/80">Render</span>
+                                <div className="inline-flex rounded border border-white/10 overflow-hidden">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRenderMode("canvas")}
+                                        className={(renderMode === "canvas" ? "bg-white/20 " : "bg-white/10 hover:bg-white/20 ") + "text-white text-xs px-3 py-1.5"}
+                                    >
+                                        Canvas
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setRenderMode("svg")}
+                                        className={(renderMode === "svg" ? "bg-white/20 " : "bg-white/10 hover:bg-white/20 ") + "text-white text-xs px-3 py-1.5 border-l border-white/10"}
+                                    >
+                                        SVG
+                                    </button>
+                                </div>
+                            </div>
                             <div className="flex items-center gap-2 flex-wrap">
                                 <button
                                     onClick={exportPNG}
@@ -383,7 +433,7 @@ export default function StarSystemEditor() {
                                 <select
                                     value={exportSizePreset}
                                     onChange={(e) => setExportSizePreset(e.target.value)}
-                                    className="rounded bg-white/10 border border-white/10 px-2 py-1 text-white text-xs"
+                                    className="rounded bg-[#1c2536] border border-white/20 px-2 py-1 text-white text-xs focus:outline-none focus:ring-2 focus:ring-yellow-400/40"
                                 >
                                     <option value="1280x720">720p (1280x720)</option>
                                     <option value="1920x1080">1080p (1920x1080)</option>
@@ -393,10 +443,30 @@ export default function StarSystemEditor() {
                                 </select>
                                 <button
                                     onClick={exportUpscaled}
-                                    className="rounded bg-orange-500 hover:bg-orange-400 text-white font-medium px-3 py-1.5"
+                                    disabled={exporting}
+                                    className={"rounded font-medium px-3 py-1.5 " + (exporting ? "bg-orange-300 text-white cursor-wait" : "bg-orange-500 hover:bg-orange-400 text-white")}
                                 >
-                                    Export Upscaled
+                                    {exporting ? "Exporting..." : "Export Upscaled"}
                                 </button>
+                                {renderMode === "svg" && (
+                                    <button
+                                        onClick={() => {
+                                            const h = svgRef.current;
+                                            if (!h) return;
+                                            const svg = h.exportSVG();
+                                            const blob = new Blob([svg], { type: "image/svg+xml" });
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement("a");
+                                            a.href = url;
+                                            a.download = `star-system_${seed}_${numPlanets}.svg`;
+                                            a.click();
+                                            setTimeout(() => URL.revokeObjectURL(url), 5000);
+                                        }}
+                                        className="rounded bg-purple-500 hover:bg-purple-400 text-white font-medium px-3 py-1.5"
+                                    >
+                                        Export SVG
+                                    </button>
+                                )}
                             </div>
                             <button
                                 onClick={exportJSON}
@@ -417,68 +487,71 @@ export default function StarSystemEditor() {
                                 className="hidden"
                                 onChange={onImportFileChange}
                             />
-                            <button
-                                onClick={() => {
-                                    setStations(prev => [...prev, defaultStation(prev.length)]);
-                                    setPlacingStationIndex(stations.length);
-                                }}
-                                className="rounded bg-blue-500 hover:bg-blue-400 text-white font-medium px-3 py-1.5"
-                            >
-                                Add Station & Place
-                            </button>
                         </div>
                     </div>
                 </div>
             </header>
-
-            {/* Removed top expandable More settings; settings now live in right panel */}
-
             <main className="flex-1">
                 <div className="w-full p-4 md:p-6">
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
-                        {/* Left sidebar: planet editor list */}
+                        {/* Left sidebar: scrollable collapsible sections */}
                         <aside className="lg:col-span-4 space-y-4 lg:pl-0">
-                            <div className="sticky top-[72px] max-h-[calc(100vh-90px)] overflow-auto">
-                                <PlanetListControls
-                                    planets={planets.map((p, i) => ({
-                                        orbitRadius: p.orbitRadius,
-                                        size: p.size,
-                                        angle: p.angle,
-                                        color: p.color,
-                                        moons: p.moons,
-                                        rings: p.rings,
-                                        name: customNames[i] ?? p.name,
-                                        showLabel: p.showLabel,
-                                    }))}
-                                    onChange={(index, updates) => {
-                                        setPlanetOverrides((prev) => {
-                                            const copy = [...prev];
-                                            copy[index] = { ...(copy[index] ?? {}), ...updates };
-                                            return copy;
-                                        });
-                                        if (updates.name !== undefined) {
-                                            setCustomNames((prev) => ({ ...prev, [index]: updates.name ?? "" }));
-                                        }
-                                    }}
-                                    onReorder={(from, to) => {
-                                        setPlanetOverrides((prev) => {
-                                            const list = [...prev];
-                                            const [moved] = list.splice(from, 1);
-                                            list.splice(to, 0, moved);
-                                            return list;
-                                        });
-                                        setCustomNames((prev) => {
-                                            const entries = Object.entries(prev).sort((a, b) => Number(a[0]) - Number(b[0]));
-                                            const names = entries.map(([, v]) => v);
-                                            const [moved] = names.splice(from, 1);
-                                            names.splice(to, 0, moved);
-                                            const next: Record<number, string> = {};
-                                            names.forEach((v, idx) => { if (v) next[idx] = v; });
-                                            return next;
-                                        });
-                                    }}
-                                />
-                                <div className="mt-4">
+                            <div className="sticky top-[72px] max-h-[calc(100vh-90px)] overflow-auto pr-1 flex flex-col gap-4">
+                                <SidebarSection title="Labels" defaultOpen={true}>
+                                    <div className="space-y-2 text-xs text-white/80">
+                                        <label className="flex items-center gap-2">
+                                            <input type="checkbox" checked={showLabelBackground} onChange={(e) => setShowLabelBackground(e.target.checked)} />
+                                            Background box
+                                        </label>
+                                        <label className="flex items-center gap-2">
+                                            <span>Position</span>
+                                            <select value={labelPosition} onChange={(e) => setLabelPosition(e.target.value as any)} className="rounded bg-[#1c2536] border border-white/20 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-blue-400/30">
+                                                <option value="top-left">Top-left</option>
+                                                <option value="top-right">Top-right</option>
+                                                <option value="bottom-left">Bottom-left</option>
+                                                <option value="bottom-right">Bottom-right</option>
+                                            </select>
+                                        </label>
+                                        <label className="flex items-center gap-2">
+                                            <span>Size</span>
+                                            <input type="range" min={8} max={24} value={labelSize} onChange={(e) => setLabelSize(Number(e.target.value))} className="w-32" />
+                                            <input type="number" min={8} max={24} value={labelSize} onChange={(e) => setLabelSize(Number(e.target.value))} className="w-16 rounded bg-white/10 border border-white/10 px-2 py-1 text-white" />
+                                        </label>
+                                        <label className="flex items-center gap-2">
+                                            <span>Color</span>
+                                            <input type="color" value={labelColor} onChange={(e) => setLabelColor(e.target.value)} className="w-10 h-6 p-0 bg-transparent border-0" />
+                                        </label>
+                                        <label className="flex items-center gap-2">
+                                            <input type="checkbox" checked={fullBleed} onChange={(e) => setFullBleed(e.target.checked)} />
+                                            Full-bleed canvas
+                                        </label>
+                                    </div>
+                                </SidebarSection>
+                                <SidebarSection title="Planets" defaultOpen={true}>
+                                    <PlanetListControls
+                                        planets={planets.map((p, i) => ({
+                                            orbitRadius: p.orbitRadius,
+                                            size: p.size,
+                                            angle: p.angle,
+                                            color: p.color,
+                                            moons: p.moons,
+                                            rings: p.rings,
+                                            name: customNames[i] ?? p.name,
+                                            showLabel: p.showLabel,
+                                        }))}
+                                        onChange={(index, updates) => {
+                                            setPlanetOverrides((prev) => {
+                                                const copy = [...prev];
+                                                copy[index] = { ...(copy[index] ?? {}), ...updates };
+                                                return copy;
+                                            });
+                                            if (updates.name !== undefined) {
+                                                setCustomNames((prev) => ({ ...prev, [index]: updates.name ?? "" }));
+                                            }
+                                        }}
+                                    />
+                                </SidebarSection>
+                                <SidebarSection title="Space stations" defaultOpen={false} actionSlot={null}>
                                     <SpaceStationsControls
                                         stations={stations}
                                         onAdd={() => setStations(prev => [...prev, defaultStation(prev.length)])}
@@ -489,81 +562,69 @@ export default function StarSystemEditor() {
                                     {placingStationIndex !== null && (
                                         <div className="mt-2 text-xs text-blue-300">Click on the canvas to place station #{placingStationIndex + 1}.</div>
                                     )}
-                                    <div className="mt-4">
-                                        <AsteroidBeltsControls
-                                            belts={belts}
-                                            planetsCount={planets.length}
-                                            onAdd={() => setBelts(prev => [...prev, { type: "free", width: 80, density: 0.5 }])}
-                                            onRemove={(idx) => setBelts(prev => prev.filter((_, i) => i !== idx))}
-                                            onChange={(idx, update) => setBelts(prev => prev.map((b, i) => i === idx ? { ...b, ...update } : b))}
-                                        />
-                                    </div>
-                                </div>
+                                </SidebarSection>
+                                <SidebarSection title="Asteroid belts" defaultOpen={false}>
+                                    <AsteroidBeltsControls
+                                        belts={belts}
+                                        planetsCount={planets.length}
+                                        onAdd={() => setBelts(prev => [...prev, { type: "free", width: 80, density: 0.5 }])}
+                                        onRemove={(idx) => setBelts(prev => prev.filter((_, i) => i !== idx))}
+                                        onChange={(idx, update) => setBelts(prev => prev.map((b, i) => i === idx ? { ...b, ...update } : b))}
+                                    />
+                                </SidebarSection>
                             </div>
                         </aside>
 
                         {/* Right: canvas */}
                         <section className="lg:col-span-8 space-y-4">
-                            {/* Settings now above the canvas */}
-                            <div className="rounded-lg border border-white/10 p-3 text-sm bg-black/40 backdrop-blur">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    <div>
-                                        <div className="text-white/90 font-medium mb-2">Labels</div>
-                                        <label className="flex items-center gap-2 text-white/80 mb-2">
-                                            <input type="checkbox" checked={showLabelBackground} onChange={(e) => setShowLabelBackground(e.target.checked)} />
-                                            Background box
-                                        </label>
-                                        <label className="flex items-center gap-2 text-white/80 mb-2">
-                                            <span>Position</span>
-                                            <select value={labelPosition} onChange={(e) => setLabelPosition(e.target.value as any)} className="rounded bg-white/10 border border-white/10 px-2 py-1 text-white">
-                                                <option value="top-left">Top-left</option>
-                                                <option value="top-right">Top-right</option>
-                                                <option value="bottom-left">Bottom-left</option>
-                                                <option value="bottom-right">Bottom-right</option>
-                                            </select>
-                                        </label>
-                                        <label className="flex items-center gap-2 text-white/80 mb-2">
-                                            <span>Size</span>
-                                            <input type="range" min={8} max={24} value={labelSize} onChange={(e) => setLabelSize(Number(e.target.value))} className="w-32" />
-                                            <input type="number" min={8} max={24} value={labelSize} onChange={(e) => setLabelSize(Number(e.target.value))} className="w-16 rounded bg-white/10 border border-white/10 px-2 py-1 text-white" />
-                                        </label>
-                                        <label className="flex items-center gap-2 text-white/80 mb-2">
-                                            <span>Color</span>
-                                            <input type="color" value={labelColor} onChange={(e) => setLabelColor(e.target.value)} className="w-10 h-6 p-0 bg-transparent border-0" />
-                                        </label>
-                                        <label className="flex items-center gap-2 text-white/80 mb-2">
-                                            <input type="checkbox" checked={fullBleed} onChange={(e) => setFullBleed(e.target.checked)} />
-                                            Full-bleed canvas
-                                        </label>
-                                    </div>
-                                    {/* Moons settings removed; Belts moved to left sidebar */}
-                                </div>
-                            </div>
-                            <StarCanvas
-                                ref={canvasRef}
-                                seed={seed}
-                                planets={planets}
-                                stations={stations}
-                                showMoons={showMoons}
-                                globalMoons={0}
-                                moonMinSize={moonMinSize}
-                                moonMaxSize={moonMaxSize}
-                                moonOrbitMin={moonOrbitMin}
-                                moonOrbitMax={moonOrbitMax}
-                                labelPosition={labelPosition}
-                                labelSize={labelSize}
-                                labelColor={labelColor}
-                                showLabelBackground={showLabelBackground}
-                                belts={belts}
-                                canvasId="star-canvas"
-                                height="min(78vh, 900px)"
-                                fullBleed={fullBleed}
-                                placingStationIndex={placingStationIndex}
-                                onPlaceStation={(idx, pos) => {
-                                    setStations(prev => prev.map((s, i) => i === idx ? { ...s, radius: pos.radius, angle: pos.angle } : s));
-                                    setPlacingStationIndex(null);
-                                }}
-                            />
+                            {/* Labels moved to left sidebar; remove old settings block */}
+                            {renderMode === "canvas" ? (
+                                <StarCanvas
+                                    ref={canvasRef}
+                                    seed={seed}
+                                    planets={planets}
+                                    stations={stations}
+                                    showMoons={showMoons}
+                                    globalMoons={0}
+                                    moonMinSize={moonMinSize}
+                                    moonMaxSize={moonMaxSize}
+                                    moonOrbitMin={moonOrbitMin}
+                                    moonOrbitMax={moonOrbitMax}
+                                    labelPosition={labelPosition}
+                                    labelSize={labelSize}
+                                    labelColor={labelColor}
+                                    showLabelBackground={showLabelBackground}
+                                    belts={belts}
+                                    canvasId="star-canvas"
+                                    height="min(78vh, 900px)"
+                                    fullBleed={fullBleed}
+                                    placingStationIndex={placingStationIndex}
+                                    onPlaceStation={(idx, pos) => {
+                                        setStations(prev => prev.map((s, i) => i === idx ? { ...s, radius: pos.radius, angle: pos.angle } : s));
+                                        setPlacingStationIndex(null);
+                                    }}
+                                />
+                            ) : (
+                                <StarSvg
+                                    ref={svgRef}
+                                    seed={seed}
+                                    planets={planets}
+                                    stations={stations}
+                                    showMoons={showMoons}
+                                    globalMoons={0}
+                                    moonMinSize={moonMinSize}
+                                    moonMaxSize={moonMaxSize}
+                                    moonOrbitMin={moonOrbitMin}
+                                    moonOrbitMax={moonOrbitMax}
+                                    labelPosition={labelPosition}
+                                    labelSize={labelSize}
+                                    labelColor={labelColor}
+                                    showLabelBackground={showLabelBackground}
+                                    belts={belts}
+                                    width={svgWidth}
+                                    height={svgHeight}
+                                />
+                            )}
                             <p className="mt-3 text-sm text-white/60">
                                 Tip: Toggle labels per planet/station. Use the seed to keep layouts stable. Export saves exactly what you see.
                             </p>

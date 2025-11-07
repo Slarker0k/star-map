@@ -27,9 +27,8 @@ export default function SpaceStationsControls({
     onPlaceRequest: (index: number) => void;
 }) {
     return (
-        <div className="rounded-lg border border-white/10 p-3 text-sm bg-black/40 backdrop-blur">
+        <div className="text-sm">
             <div className="flex items-center justify-between mb-2">
-                <div className="text-white/90 font-medium">Space stations</div>
                 <button
                     type="button"
                     onClick={onAdd}
@@ -92,7 +91,7 @@ export default function SpaceStationsControls({
                                 <select
                                     value={s.iconType}
                                     onChange={(e) => onChange(i, { iconType: e.target.value as Station["iconType"] })}
-                                    className="rounded bg-white/10 border border-white/10 px-2 py-1 text-white"
+                                    className="rounded bg-[#1c2536] border border-white/20 px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-blue-400/40"
                                 >
                                     {ICON_TYPES.map((t) => (
                                         <option key={t} value={t}>{t}</option>

@@ -1,30 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Star System Map Generator
+=========================
 
-## Getting Started
+An interactive TTRPG-friendly star system generator built with Next.js, React, and TypeScript. Render systems in Canvas or SVG, customize planets, belts, and stations, and export high-resolution images.
 
-First, run the development server:
+Built collaboratively with GitHub Copilot.
+
+Features
+--------
+- Deterministic system generation via seed
+- Up to 3 stars per system with different types and visuals (yellow, red dwarf, blue giant, neutron, black hole)
+- Per-planet customization: name, size, color, moons, rings, label toggle
+- Asteroid belts: free or anchored between orbits, width and density controls
+- Space stations: multiple icons, custom image, color/size, position/place on canvas, label toggle
+- Labels: per-object visibility with global style (position, size, color, optional background)
+- Dual renderers: Canvas and SVG
+- Export:
+	- PNG at current size
+	- Upscaled PNG (720p, 1080p, 2K, 1440p, 4K)
+	- Raw SVG (in SVG mode)
+	- JSON (round-trip system state, including embedded custom station icons)
+
+Quick start
+-----------
+
+Prerequisites: Node.js 20+ recommended.
+
+Development server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open http://localhost:3000 in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Production build:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+Usage tips
+----------
+- Use the left sidebar to configure labels, stars, planets, stations, and belts.
+- Switch between Canvas and SVG using the header toggle.
+- Export PNG/SVG/JSON from the header actions. Upscaled PNG uses the selected preset.
+- Import JSON to restore a saved configuration.
 
-To learn more about Next.js, take a look at the following resources:
+Tech stack
+----------
+- Next.js 16 (App Router)
+- React 19
+- TypeScript
+- Tailwind CSS v4
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Acknowledgements
+----------------
+This project and its features were implemented with assistance from GitHub Copilot, including renderer implementations, export flows, and UI wiring.
